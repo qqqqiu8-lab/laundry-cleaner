@@ -5,11 +5,11 @@ import plotly.express as px
 from io import BytesIO
 
 # --- 1. 网页配置 ---
-st.set_page_config(page_title="洗衣片分析-交互看板", layout="wide")
+st.set_page_config(page_title="洗衣片分析-高级看板", layout="wide")
 st.title("📊 洗衣片市场深度看板 (高级交互版)")
 st.markdown("---")
 
-# --- 2. 核心配置区 (保留你的所有定义) ---
+# --- 2. 核心配置区 (已改为全大写 CLEARALIF) ---
 HEAD_BRANDS = {"earth breeze", "the clean people", "arm & hammer", "tru earth", "sheets laundry club"}
 CORRECTION_MAP = {
     "B091JHW9B6": 13.99, "B0FY6TTGBC": 12.79, "B0G3WPX1RW": 13.98,
@@ -17,7 +17,8 @@ CORRECTION_MAP = {
 }
 TARGET_BRANDS = [
     "Earth Breeze", "SHEETS LAUNDRY CLUB", "Tru Earth", "Arm & Hammer", 
-    "Poesie", "THE CLEAN PEOPLE", "Binbata", "KIND LAUNDRY", "Cleancult", "Sudstainables"
+    "Poesie", "THE CLEAN PEOPLE", "Binbata", "KIND LAUNDRY", "Cleancult", 
+    "Sudstainables", "CLEARALIF"
 ]
 
 def clean_currency(series):
@@ -27,13 +28,12 @@ def clean_currency(series):
     ).fillna(0)
 
 # --- 3. 网页取数接口 ---
-uploaded_file = st.file_uploader("📥 第一步：请上传原始 input.xlsx 文件", type=["xlsx"])
+uploaded_file = st.file_uploader("📥 上传原始 input.xlsx 文件", type=["xlsx"])
 
 if uploaded_file:
-    with st.spinner('🚀 正在深度清洗并生成看板...'):
-        # --- 原始核心逻辑 (保持不变) ---
+    with st.spinner('🚀 正在生成看板...'):
         df = pd.read_excel(uploaded_file, sheet_name='Sheet1', dtype=str)
-        cols = {'a': df.columns[0], 'asin': 'ASIN', 'brand': '品牌', 'title': '商品标题', 
+        cols = {'asin': 'ASIN', 'brand': '品牌', 'title': '商品标题', 
                 'p_asin': '父ASIN', 'u': '月销量', 'w': '月销售额($)', 'p': '价格($)'}
 
         df['_num_w'] = clean_currency(df[cols['w']])
@@ -70,18 +70,14 @@ if uploaded_file:
 
         total_u, total_w = sheet2['月销量'].sum(), sheet2['月销售额($)'].sum()
 
-        # --- 🚀 4. 网页可视化展示 (老板最爱) ---
-        # A. 顶端关键指标卡片
+        # --- 4. 可视化看板 ---
         m1, m2, m3 = st.columns(3)
         m1.metric("市场总销售额", f"${total_w:,.0f}")
         m2.metric("市场总销量", f"{total_u:,.0f} units")
         m3.metric("市场均价", f"${(total_w/total_u if total_u else 0):.2f}")
 
-        # B. 交互图表
         col1, col2 = st.columns(2)
-        
         with col1:
-            # 价格带饼图逻辑
             p_col = sheet2['价格($)']
             p_data = pd.DataFrame({
                 "价格区间": ["<$10", "$10-14", "$14-20", ">$20"],
@@ -92,43 +88,34 @@ if uploaded_file:
                     sheet2[p_col >= 20]['月销售额($)'].sum()
                 ]
             })
-            fig_pie = px.pie(p_data, values='销售额', names='价格区间', title='市场价格带占比 (销售额)', hole=0.4)
+            fig_pie = px.pie(p_data, values='销售额', names='价格区间', title='价格分布占比', hole=0.4)
             st.plotly_chart(fig_pie, use_container_width=True)
 
         with col2:
-            # 品牌份额条形图逻辑
             brand_res = []
             for b in TARGET_BRANDS:
                 b_df = sheet2[sheet2['品牌'].str.lower().str.strip() == b.lower().strip()]
                 bw = b_df['月销售额($)'].sum()
                 brand_res.append({'品牌': b, '销售额': bw})
             df_plot = pd.DataFrame(brand_res).sort_values('销售额', ascending=True)
-            fig_bar = px.bar(df_plot, x='销售额', y='品牌', orientation='h', title='重点品牌销售规模对比', color='销售额', color_continuous_scale='Viridis')
+            fig_bar = px.bar(df_plot, x='销售额', y='品牌', orientation='h', title='重点品牌对比', color='销售额')
             st.plotly_chart(fig_bar, use_container_width=True)
 
-        # C. 实时表格预览
-        st.subheader("📋 重点监控品牌数据详表")
-        # 重新整理品牌汇总表
+        # 品牌数据表展示
+        st.subheader("📋 重点监控品牌详表")
         brand_final = []
         for b in TARGET_BRANDS:
             b_df = sheet2[sheet2['品牌'].str.lower().str.strip() == b.lower().strip()]
             bw, bu = b_df['月销售额($)'].sum(), b_df['月销量'].sum()
-            brand_final.append({'品牌名': b, '链接数': len(b_df), '总销量': bu, '总销售额': round(bw, 2), '市占率%': f"{(bw/total_w*100):.2f}%" if total_w else "0%"})
+            brand_final.append({'品牌名': b, '总销量': bu, '总销售额': round(bw, 2), '占比%': f"{(bw/total_w*100):.2f}%" if total_w else "0%"})
         df_brand_table = pd.DataFrame(brand_final).sort_values('总销售额', ascending=False)
-        st.dataframe(df_brand_table, use_container_width=True) # 网页直接显示表格
+        st.dataframe(df_brand_table, use_container_width=True)
 
-        # --- 5. 导出逻辑 (保持 Excel 所有 Sheet 导出不变) ---
+        # --- 5. 导出逻辑 ---
         output = BytesIO()
         with pd.ExcelWriter(output, engine='openpyxl') as writer:
             df_clean.to_excel(writer, sheet_name='Sheet1', index=False)
             sheet2.to_excel(writer, sheet_name='Sheet2', index=False)
             df_brand_table.to_excel(writer, sheet_name='品牌分析汇总', index=False)
         
-        st.markdown("---")
-        st.success("✅ 所有数据已分析完成！")
-        st.download_button(
-            label="📥 下载完整的五表联动分析报告 (Excel)",
-            data=output.getvalue(),
-            file_name="洗衣片市场深度看板报告.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        )
+        st.download_button("📥 下载完整报告", data=output.getvalue(), file_name="洗衣片市场分析报告.xlsx")
