@@ -6,13 +6,14 @@ from io import BytesIO
 
 # --- 1. 配置 ---
 st.set_page_config(page_title="洗衣片分析-终极看板", layout="wide")
-st.title("📊 洗衣片市场深度分析 (8步清洗+5表联动+大盘看板)")
+st.title("📊 洗衣片市场分析 (8步清洗+重点品牌监控+5表联动)")
 
 # --- 2. 核心规则配置 ---
 CORRECTION_MAP = {
     "B091JHW9B6": 13.99, "B0FY6TTGBC": 12.79, "B0G3WPX1RW": 13.98,
     "B0D48FXQ3N": 14.99, "B0D8LJ1ZHG": 14.99, "B0B7LC848X": 16.98
 }
+# 你指定的重点监控品牌
 TARGET_BRANDS = ["Earth Breeze", "SHEETS LAUNDRY CLUB", "Tru Earth", "Arm & Hammer", "Poesie", "THE CLEAN PEOPLE", "Binbata", "KIND LAUNDRY", "Cleancult", "Sudstainables", "CLEARALIF", "Soulink"]
 
 def clean_currency(series):
@@ -36,10 +37,11 @@ def get_total_loads(row, asin_col, title_col):
 uploaded_file = st.file_uploader("📥 请上传原始 input.xlsx 文件", type=["xlsx"])
 
 if uploaded_file:
-    with st.spinner('🚀 正在执行终极清洗与统计逻辑...'):
+    with st.spinner('🚀 正在执行极致清洗逻辑并生成品牌看板...'):
         df = pd.read_excel(uploaded_file, sheet_name='Sheet1', dtype=str)
         cols = {'asin': 'ASIN', 'brand': '品牌', 'title': '商品标题', 'p_asin': '父ASIN', 'u': '月销量', 'w': '月销售额($)', 'p': '价格($)'}
         
+        # A. 预处理
         df['_num_w'] = clean_currency(df[cols['w']])
         df['_num_u'] = clean_currency(df[cols['u']])
         df['_num_p'] = clean_currency(df[cols['p']])
@@ -59,7 +61,7 @@ if uploaded_file:
         df_f1 = df_f1.dropna(subset=['_num_u', '_num_w'])
         df_f1 = df_f1[df_f1[cols['title']].fillna("").str.lower().str.contains("strips|sheets")]
         
-        # 查重逻辑
+        # 深度去重 (保留最低额)
         df_f1 = df_f1.sort_values('_num_w', ascending=True)
         df_f1 = df_f1.drop_duplicates(subset=[cols['asin']], keep='first')
         df_f1 = df_f1.drop_duplicates(subset=[cols['p_asin']], keep='first')
@@ -86,41 +88,45 @@ if uploaded_file:
         })
         tw, tu = s2['月销售额($)'].sum(), s2['月销量'].sum()
 
-        p_b = s2['价格($)']
-        s3 = pd.DataFrame([["<$10", len(s2[p_b<10]), s2[p_b<10]['月销售额($)'].sum()], ["$10-14", len(s2[(p_b>=10)&(p_b<14)]), s2[(p_b>=10)&(p_b<14)]['月销售额($)'].sum()], ["$14-20", len(s2[(p_b>=14)&(p_b<20)]), s2[(p_b>=14)&(p_b<20)]['月销售额($)'].sum()], [">$20", len(s2[p_b>=20]), s2[p_b>=20]['月销售额($)'].sum()]], columns=["价格带", "链接数", "月销售额"])
-        s3['占比%'] = (s3['月销售额']/tw*100).round(2).astype(str)+'%'
-
-        lc = s2['Load成本']
-        s4 = pd.DataFrame([["<$0.1", len(s2[lc<0.1]), s2[lc<0.1]['月销售额($)'].sum()], ["$0.1-0.2", len(s2[(lc>=0.1)&(lc<0.2)]), s2[(lc>=0.1)&(lc<0.2)]['月销售额($)'].sum()], [">$0.2", len(s2[lc>=0.2]), s2[lc>=0.2]['月销售额($)'].sum()]], columns=["Load成本段", "链接数", "月销售额"])
-        s4['占比%'] = (s4['月销售额']/tw*100).round(2).astype(str)+'%'
-
-        br_res = []
-        for b in TARGET_BRANDS:
-            b_df = s2[s2['品牌'].str.lower().str.strip() == b.lower().strip()]
-            bw = b_df['月销售额($)'].sum()
-            avg_l = b_df[b_df['Load成本']>0]['Load成本'].mean()
-            br_res.append([b, len(b_df), b_df['月销量'].sum(), round(bw,2), f"{(bw/tw*100):.2f}%" if tw else "0%", f"${avg_l:.3f}" if avg_l else "N/A"])
-        s5 = pd.DataFrame(br_res, columns=["品牌名", "链接数", "总销量", "总销售额", "市占率%", "平均Load成本"])
-
-        # E. 看板
+        # E. 看板布局
         st.markdown("### 📈 市场大盘汇总指标")
         k1, k2, k3 = st.columns(3)
         k1.metric("市场总额", f"${tw:,.2f}")
         k2.metric("市场总量", f"{tu:,.0f} Units")
         k3.metric("市场均价", f"${(tw/tu if tu else 0):.2f}")
         
-        c1, c2 = st.columns(2)
-        with c1: st.plotly_chart(px.pie(s3, values='月销售额', names='价格带', title='价格带分布', hole=0.4), use_container_width=True)
-        with c2: st.plotly_chart(px.bar(s5.sort_values('总销售额'), x='总销售额', y='品牌名', orientation='h', title='重点品牌对比'), use_container_width=True)
+        # --- 🚀 新增：重点品牌表现看板 ---
+        st.markdown("---")
+        st.markdown("### 🏆 重点品牌监控看板")
+        
+        br_res = []
+        for b in TARGET_BRANDS:
+            b_df = s2[s2['品牌'].str.lower().str.strip() == b.lower().strip()]
+            bw = b_df['月销售额($)'].sum()
+            units = b_df['月销量'].sum()
+            share = (bw / tw * 100) if tw > 0 else 0
+            br_res.append({"品牌名": b, "总销量": units, "总销售额": round(bw, 2), "市场份额": round(share, 2)})
+        
+        s5_monitor = pd.DataFrame(br_res)
+        
+        col_br1, col_br2 = st.columns([1, 1])
+        with col_br1:
+            st.plotly_chart(px.bar(s5_monitor.sort_values('总销售额'), x='总销售额', y='品牌名', orientation='h', title='重点品牌-销售额排名', color='总销售额', text_auto='.2s'), use_container_width=True)
+        with col_br2:
+            st.plotly_chart(px.pie(s5_monitor, values='市场份额', names='品牌名', title='重点品牌-市场份额占比 (相对份额)', hole=0.3), use_container_width=True)
+            
+        st.dataframe(s5_monitor.sort_values('市场份额', ascending=False), use_container_width=True)
+        # --------------------------------
 
-        # F. 导出
+        # F. 导出逻辑 (保持 5 个 Sheet 不变)
+        p_b = s2['价格($)']
+        s3 = pd.DataFrame([["<$10", len(s2[p_b<10]), s2[p_b<10]['月销售额($)'].sum()], ["$10-14", len(s2[(p_b>=10)&(p_b<14)]), s2[(p_b>=10)&(p_b<14)]['月销售额($)'].sum()], ["$14-20", len(s2[(p_b>=14)&(p_b<20)]), s2[(p_b>=14)&(p_b<20)]['月销售额($)'].sum()], [">$20", len(s2[p_b>=20]), s2[p_b>=20]['月销售额($)'].sum()]], columns=["价格带", "链接数", "月销售额"])
+        
+        lc = s2['Load成本']
+        s4 = pd.DataFrame([["<$0.1", len(s2[lc<0.1]), s2[lc<0.1]['月销售额($)'].sum()], ["$0.1-0.2", len(s2[(lc>=0.1)&(lc<0.2)]), s2[(lc>=0.1)&(lc<0.2)]['月销售额($)'].sum()], [">$0.2", len(s2[lc>=0.2]), s2[lc>=0.2]['月销售额($)'].sum()]], columns=["Load成本段", "链接数", "月销售额"])
+
         output = BytesIO()
         with pd.ExcelWriter(output, engine='openpyxl') as writer:
             df_f1.to_excel(writer, sheet_name='Sheet1_脱水清洗', index=False)
             s2.to_excel(writer, sheet_name='Sheet2_核心数据', index=False)
-            s3.to_excel(writer, sheet_name='Sheet3_价格分析', index=False)
-            s4.to_excel(writer, sheet_name='Sheet4_Load分析', index=False)
-            s5.to_excel(writer, sheet_name='Sheet5_品牌汇总', index=False)
-        
-        st.success("✅ 数据处理成功！")
-        st.download_button(label="📥 下载终极五表联动报告", data=output.getvalue(), file_name="洗衣片深度分析报告.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+            s3.to_excel(writer, sheet_name='Sheet
