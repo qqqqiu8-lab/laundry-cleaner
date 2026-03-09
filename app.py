@@ -9,7 +9,7 @@ st.set_page_config(page_title="洗衣片分析-高级看板", layout="wide")
 st.title("📊 洗衣片市场深度看板 (高级交互版)")
 st.markdown("---")
 
-# --- 2. 核心配置区 (已改为全大写 CLEARALIF) ---
+# --- 2. 核心配置区 (已增加 CLEARALIF 和 Soulink) ---
 HEAD_BRANDS = {"earth breeze", "the clean people", "arm & hammer", "tru earth", "sheets laundry club"}
 CORRECTION_MAP = {
     "B091JHW9B6": 13.99, "B0FY6TTGBC": 12.79, "B0G3WPX1RW": 13.98,
@@ -18,7 +18,7 @@ CORRECTION_MAP = {
 TARGET_BRANDS = [
     "Earth Breeze", "SHEETS LAUNDRY CLUB", "Tru Earth", "Arm & Hammer", 
     "Poesie", "THE CLEAN PEOPLE", "Binbata", "KIND LAUNDRY", "Cleancult", 
-    "Sudstainables", "CLEARALIF"
+    "Sudstainables", "CLEARALIF", "Soulink"
 ]
 
 def clean_currency(series):
@@ -94,6 +94,7 @@ if uploaded_file:
         with col2:
             brand_res = []
             for b in TARGET_BRANDS:
+                # 统一转小写匹配，防止大小写干扰
                 b_df = sheet2[sheet2['品牌'].str.lower().str.strip() == b.lower().strip()]
                 bw = b_df['月销售额($)'].sum()
                 brand_res.append({'品牌': b, '销售额': bw})
@@ -107,7 +108,12 @@ if uploaded_file:
         for b in TARGET_BRANDS:
             b_df = sheet2[sheet2['品牌'].str.lower().str.strip() == b.lower().strip()]
             bw, bu = b_df['月销售额($)'].sum(), b_df['月销量'].sum()
-            brand_final.append({'品牌名': b, '总销量': bu, '总销售额': round(bw, 2), '占比%': f"{(bw/total_w*100):.2f}%" if total_w else "0%"})
+            brand_final.append({
+                '品牌名': b, 
+                '总销量': bu, 
+                '总销售额': round(bw, 2), 
+                '占比%': f"{(bw/total_w*100):.2f}%" if total_w else "0%"
+            })
         df_brand_table = pd.DataFrame(brand_final).sort_values('总销售额', ascending=False)
         st.dataframe(df_brand_table, use_container_width=True)
 
